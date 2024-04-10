@@ -38,6 +38,37 @@ class Mlp(nn.Module):
         x = self.drop(x)
         return x
 
+def window_packing(x, window_size):
+    """
+    Args:
+        x: (B, H, W, C)
+        window_size (int): window size
+
+    Returns:
+        windows: (num_windows*B, window_size, window_size, C)
+    """
+    B, H, W, C = x.shape
+    x= x.contiguous().view(B, window_size, H // window_size, window_size, W // window_size, C)
+    windows = x.permute(0, 2, 4, 1, 3, 5).contiguous().view(-1, window_size, window_size, C)
+    return windows
+
+
+def window_unpacking(windows, window_size, H, W):
+    """
+    Args:
+        windows: (num_windows*B, window_size, window_size, C)
+        window_size (int): Window size
+        H (int): Height of image
+        W (int): Width of image
+
+    Returns:
+        x: (B, H, W, C)
+    """
+    B = int(windows.shape[0] / (H * W / window_size / window_size))
+    x = windows.view(B, H // window_size, W // window_size, window_size, window_size, -1)
+    x = x.permute(0, 3, 1, 4, 2, 5).contiguous().view(B, H, W, -1)
+    return x
+
 
 def window_partition(x, window_size):
     """
@@ -207,39 +238,41 @@ class SwinTransformerBlock(nn.Module):
         x = x.view(B, H, W, C)
 
         # pad feature maps to multiples of window size
-        pad_l = pad_t = 0
-        pad_r = (self.window_size - W % self.window_size) % self.window_size
-        pad_b = (self.window_size - H % self.window_size) % self.window_size
-        x = F.pad(x, (0, 0, pad_l, pad_r, pad_t, pad_b))
-        _, Hp, Wp, _ = x.shape
+        # pad_l = pad_t = 0
+        # pad_r = (self.window_size - W % self.window_size) % self.window_size
+        # pad_b = (self.window_size - H % self.window_size) % self.window_size
+        # x = F.pad(x, (0, 0, pad_l, pad_r, pad_t, pad_b))
+        # _, Hp, Wp, _ = x.shape
 
         # cyclic shift
-        if self.shift_size > 0:
-            shifted_x = torch.roll(x, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2))
-            attn_mask = mask_matrix
-        else:
-            shifted_x = x
-            attn_mask = None
+        # if self.shift_size > 0:
+        #     shifted_x = torch.roll(x, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2))
+        #     attn_mask = mask_matrix
+        # else:
+        #     shifted_x = x
+        #     attn_mask = None
 
         # partition windows
-        x_windows = window_partition(shifted_x, self.window_size)  # nW*B, window_size, window_size, C
+        # x_windows = window_partition(shifted_x, self.window_size)  # nW*B, window_size, window_size, C
+        x_windows = window_packing(x, self.window_size)
         x_windows = x_windows.view(-1, self.window_size * self.window_size, C)  # nW*B, window_size*window_size, C
 
         # W-MSA/SW-MSA
-        attn_windows = self.attn(x_windows, mask=attn_mask)  # nW*B, window_size*window_size, C
+        attn_windows = self.attn(x_windows)  # nW*B, window_size*window_size, C
 
         # merge windows
         attn_windows = attn_windows.view(-1, self.window_size, self.window_size, C)
-        shifted_x = window_reverse(attn_windows, self.window_size, Hp, Wp)  # B H' W' C
+        # shifted_x = window_reverse(attn_windows, self.window_size, Hp, Wp)  # B H' W' C
+        x = window_unpacking(attn_windows, self.window_size, H, W)
 
         # reverse cyclic shift
-        if self.shift_size > 0:
-            x = torch.roll(shifted_x, shifts=(self.shift_size, self.shift_size), dims=(1, 2))
-        else:
-            x = shifted_x
+        # if self.shift_size > 0:
+        #     x = torch.roll(shifted_x, shifts=(self.shift_size, self.shift_size), dims=(1, 2))
+        # else:
+        #     x = shifted_x
 
-        if pad_r > 0 or pad_b > 0:
-            x = x[:, :H, :W, :].contiguous()
+        # if pad_r > 0 or pad_b > 0:
+        #     x = x[:, :H, :W, :].contiguous()
 
         x = x.view(B, H * W, C)
 
@@ -539,7 +572,7 @@ class SwinTransformer(Backbone):
             if stage in self.out_features:
                 self._out_feature_channels[stage] = embed_dim * 2 ** i_layer
                 self._out_feature_strides[stage] = 4 * 2 ** i_layer
- 
+
         num_features = [int(embed_dim * 2 ** i) for i in range(self.num_layers)]
         self.num_features = num_features
 
