@@ -348,6 +348,7 @@ class BasicLayer(nn.Module):
 
     def __init__(self,
                  dim,
+                 input_resolution,
                  depth,
                  num_heads,
                  window_size=7,
@@ -360,13 +361,13 @@ class BasicLayer(nn.Module):
                  norm_layer=nn.LayerNorm,
                  downsample=None,
                  use_checkpoint=False,
-                 input_resolution = (patches_resolution[0] // (2 ** i_layer),
-                                                 patches_resolution[1] // (2 ** i_layer))):
+                 ):
         super().__init__()
         self.window_size = window_size
         self.shift_size = window_size // 2
         self.depth = depth
         self.use_checkpoint = use_checkpoint
+        self.input_resolution = input_resolution
 
         # build blocks
         self.blocks = nn.ModuleList([
@@ -568,6 +569,8 @@ class SwinTransformer(Backbone):
         for i_layer in range(self.num_layers):
             layer = BasicLayer(
                 dim=int(embed_dim * 2 ** i_layer),
+                input_resolution=(patches_resolution[0] // (2 ** i_layer),
+                                                 patches_resolution[1] // (2 ** i_layer)),
                 depth=depths[i_layer],
                 num_heads=num_heads[i_layer],
                 window_size=window_size,
