@@ -207,6 +207,10 @@ class SwinTransformerBlock(nn.Module):
         self.window_size = window_size
         self.shift_size = shift_size
         self.mlp_ratio = mlp_ratio
+        if min(self.input_resolution) <= self.window_size:
+            # if window size is larger than input resolution, we don't partition windows
+            self.window_size = min(self.input_resolution)
+
         assert 0 <= self.shift_size < self.window_size, "shift_size must in 0-window_size"
 
         self.norm1 = norm_layer(dim)
@@ -355,7 +359,9 @@ class BasicLayer(nn.Module):
                  drop_path=0.,
                  norm_layer=nn.LayerNorm,
                  downsample=None,
-                 use_checkpoint=False):
+                 use_checkpoint=False,
+                 input_resolution = (patches_resolution[0] // (2 ** i_layer),
+                                                 patches_resolution[1] // (2 ** i_layer))):
         super().__init__()
         self.window_size = window_size
         self.shift_size = window_size // 2
@@ -437,11 +443,16 @@ class PatchEmbed(nn.Module):
 
     def __init__(self, patch_size=4, in_chans=3, embed_dim=96, norm_layer=None):
         super().__init__()
+        img_size = to_2tuple(img_size)
         patch_size = to_2tuple(patch_size)
         self.patch_size = patch_size
-
+        patches_resolution = [img_size[0] // patch_size[0], img_size[1] // patch_size[1]]
         self.in_chans = in_chans
         self.embed_dim = embed_dim
+
+        self.patch_size = patch_size
+        self.patches_resolution = patches_resolution
+        self.num_patches = patches_resolution[0] * patches_resolution[1]
 
         self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
         if norm_layer is not None:
@@ -531,6 +542,9 @@ class SwinTransformer(Backbone):
         self.patch_embed = PatchEmbed(
             patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim,
             norm_layer=norm_layer if self.patch_norm else None)
+        num_patches = self.patch_embed.num_patches
+        patches_resolution = self.patch_embed.patches_resolution
+        self.patches_resolution = patches_resolution
 
         # absolute position embedding
         if self.ape:
