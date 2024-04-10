@@ -356,7 +356,7 @@ class BasicLayer(nn.Module):
                  qkv_bias=True,
                  qk_scale=None,
                  drop=0.,
-                 attn_drop=0.,1
+                 attn_drop=0.1,
                  drop_path=0.,
                  norm_layer=nn.LayerNorm,
                  downsample=None,
